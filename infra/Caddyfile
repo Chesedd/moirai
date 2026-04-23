@@ -1,0 +1,9 @@
+# Moirai reverse proxy.
+#
+# На старте просто health-endpoint — полезно проверять снаружи, жив ли стек.
+# Позже сюда приедут вебхуки и HTTPS (Фаза 6), когда/если понадобятся.
+
+:80 {
+    respond /health "ok" 200
+    respond "Moirai" 200
+}

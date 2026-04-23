@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Environment и секреты
+.env
+.env.local
+.env.*.local
+gdrive-sa.json
+*-credentials.json
+secrets/
+
+# Runtime state (volume бота)
+bot/state/
+*.db
+*.db-journal
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Логи
+*.log
