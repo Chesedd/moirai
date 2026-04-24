@@ -1,33 +1,14 @@
 services:
-  bot:
-    build: ../bot
-    container_name: moirai-bot
-    restart: unless-stopped
-    env_file:
-      - ../.env
-    volumes:
-      - ../bot/state:/app/state
-      - ../secrets/gdrive-sa.json:/app/gdrive-sa.json:ro
-    networks:
-      - moirai
-
   caddy:
     image: caddy:2-alpine
     container_name: moirai-caddy
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    networks:
-      - moirai
-
-networks:
-  moirai:
-    driver: bridge
 
 volumes:
   caddy_data:
