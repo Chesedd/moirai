@@ -10,6 +10,13 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  xray:
+    image: teddysun/xray:latest
+    container_name: moirai-xray
+    restart: unless-stopped
+    volumes:
+      - /opt/moirai/secrets/xray-config.json:/etc/xray/config.json:ro
+
   bot:
     build: ../bot
     container_name: moirai-bot
@@ -19,6 +26,8 @@ services:
     restart: unless-stopped
     depends_on:
       caddy:
+        condition: service_started
+      xray:
         condition: service_started
     logging:
       driver: json-file

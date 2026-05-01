@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from .config import Settings
 from .handlers import WhitelistMiddleware, router
@@ -15,9 +16,15 @@ logger = logging.getLogger("moirai_bot")
 
 async def _run() -> None:
     settings = Settings()  # type: ignore[call-arg]
+    if settings.telegram_proxy_url:
+        logger.info("telegram proxy: %s", settings.telegram_proxy_url)
+        session = AiohttpSession(proxy=settings.telegram_proxy_url)
+    else:
+        logger.info("telegram proxy: not set, using direct connection")
+        session = AiohttpSession()
     logger.info("bot started, allowed users: %s", settings.telegram_allowed_user_ids)
 
-    bot = Bot(token=settings.telegram_bot_token)
+    bot = Bot(token=settings.telegram_bot_token, session=session)
     dispatcher = Dispatcher()
 
     middleware = WhitelistMiddleware(set(settings.telegram_allowed_user_ids))
