@@ -11,11 +11,12 @@ services:
       - caddy_config:/config
 
   xray:
-    image: teddysun/xray:latest
+    image: ghcr.io/xtls/xray-core:latest
     container_name: moirai-xray
     restart: unless-stopped
+    command: ["run", "-c", "/usr/local/etc/xray/config.json"]
     volumes:
-      - /opt/moirai/secrets/xray-config.json:/etc/xray/config.json:ro
+      - /opt/moirai/secrets/xray-config.json:/usr/local/etc/xray/config.json:ro
 
   bot:
     build: ../bot
