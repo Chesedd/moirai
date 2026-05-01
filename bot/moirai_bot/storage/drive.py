@@ -45,6 +45,32 @@ class DriveStorage:
         new_content = current + line + "\n"
         self._upload(file_id, new_content)
 
+    async def delete_line_from_inbox(self, line: str) -> bool:
+        """Удаляет первое точное вхождение `line` (без \\n) из inbox.md.
+
+        Возвращает True, если удалено, False если строки не было.
+        """
+        async with self._lock:
+            return await asyncio.to_thread(self._delete_line_from_inbox_sync, line)
+
+    def _delete_line_from_inbox_sync(self, line: str) -> bool:
+        file_id = self._find_inbox_id()
+        current = self._download(file_id)
+        had_trailing_newline = current.endswith("\n")
+        lines = current.split("\n")
+        if had_trailing_newline and lines and lines[-1] == "":
+            lines.pop()
+        try:
+            idx = lines.index(line)
+        except ValueError:
+            return False
+        del lines[idx]
+        new_content = "\n".join(lines)
+        if lines and had_trailing_newline:
+            new_content += "\n"
+        self._upload(file_id, new_content)
+        return True
+
     def _find_inbox_id(self) -> str:
         query = (
             f"name = '{_INBOX_NAME}' "

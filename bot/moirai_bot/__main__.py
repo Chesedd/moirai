@@ -10,6 +10,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from .config import Settings
 from .handlers import WhitelistMiddleware, router
+from .state import UndoLog
 from .storage.drive import DriveStorage
 
 logger = logging.getLogger("moirai_bot")
@@ -31,9 +32,14 @@ async def _run() -> None:
     )
     logger.info("drive storage: folder=%s", settings.gdrive_folder_id)
 
+    undo_log_path = f"{settings.state_dir}/undo_log.json"
+    undo_log = UndoLog(undo_log_path)
+    logger.info("undo log: %s", undo_log_path)
+
     bot = Bot(token=settings.telegram_bot_token, session=session)
     dispatcher = Dispatcher()
     dispatcher["drive"] = drive_storage
+    dispatcher["undo_log"] = undo_log
 
     middleware = WhitelistMiddleware(set(settings.telegram_allowed_user_ids))
     dispatcher.message.middleware(middleware)

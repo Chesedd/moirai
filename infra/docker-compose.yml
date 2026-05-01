@@ -24,6 +24,7 @@ services:
     env_file: ../.env
     volumes:
       - /opt/moirai/secrets:/secrets:ro
+      - /opt/moirai/state:/state
     restart: unless-stopped
     depends_on:
       caddy:
