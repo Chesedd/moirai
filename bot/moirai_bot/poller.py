@@ -50,12 +50,13 @@ class OutputsPoller:
         for file in files:
             if not file.name.endswith(_SHORT_SUFFIX):
                 continue
-            prev = await self._last_sent.get(file.name)
+            prev = await self._last_sent.get(file.id)
             if prev == file.modified_time:
                 continue
             content = await self._drive.read_file(file.id)
             await self._send(file.name, content)
-            await self._last_sent.set(file.name, file.modified_time)
+            await self._last_sent.set(file.id, file.modified_time)
+        await self._last_sent.prune_unknown({f.id for f in files})
 
     async def _send(self, name: str, content: str) -> None:
         """Отправляет content в self._chat_id, разбивая на куски при необходимости."""

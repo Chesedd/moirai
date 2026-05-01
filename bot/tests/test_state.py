@@ -95,3 +95,35 @@ async def test_get_unknown_key_returns_none(tmp_path: Path) -> None:
     last_sent = LastSent(_last_sent_path(tmp_path))
     await last_sent.set("daily_plan_short.md", "2026-05-02T08:00:00.000Z")
     assert await last_sent.get("priorities_short.md") is None
+
+
+async def test_prune_removes_keys_not_in_set(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    await last_sent.set("id-keep", "2026-05-02T08:00:00.000Z")
+    await last_sent.set("id-drop", "2026-05-02T08:00:00.000Z")
+    await last_sent.prune_unknown({"id-keep"})
+    assert await last_sent.get("id-keep") == "2026-05-02T08:00:00.000Z"
+    assert await last_sent.get("id-drop") is None
+
+
+async def test_prune_keeps_keys_in_set(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    await last_sent.set("id-a", "2026-05-02T08:00:00.000Z")
+    await last_sent.set("id-b", "2026-05-03T08:00:00.000Z")
+    await last_sent.prune_unknown({"id-a", "id-b", "id-c"})
+    assert await last_sent.get("id-a") == "2026-05-02T08:00:00.000Z"
+    assert await last_sent.get("id-b") == "2026-05-03T08:00:00.000Z"
+
+
+async def test_prune_on_empty_state_does_nothing(tmp_path: Path) -> None:
+    path = _last_sent_path(tmp_path)
+    Path(path).write_text("{}", encoding="utf-8")
+    last_sent = LastSent(path)
+    await last_sent.prune_unknown({"id-a"})
+    assert await last_sent.get("id-a") is None
+
+
+async def test_prune_on_missing_file_does_nothing(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    await last_sent.prune_unknown({"id-a"})
+    assert await last_sent.get("id-a") is None

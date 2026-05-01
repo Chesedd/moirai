@@ -86,6 +86,15 @@ class LastSent:
             data[name] = modified_time
             await asyncio.to_thread(self._write_sync, data)
 
+    async def prune_unknown(self, known_ids: set[str]) -> None:
+        """Удаляет из state все ключи, которых нет в known_ids."""
+        async with self._lock:
+            data = await asyncio.to_thread(self._read_sync)
+            pruned = {key: value for key, value in data.items() if key in known_ids}
+            if pruned == data:
+                return
+            await asyncio.to_thread(self._write_sync, pruned)
+
     def _read_sync(self) -> dict:
         try:
             with open(self._path, encoding="utf-8") as f:
