@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from aiogram import BaseMiddleware, F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import Message, TelegramObject, User
 
+from .inbox import classify, format_line
+from .storage.drive import DriveStorage
+
 logger = logging.getLogger(__name__)
 
 router = Router(name="moirai")
+
+_TZ = ZoneInfo("Europe/Moscow")
 
 
 class WhitelistMiddleware(BaseMiddleware):
@@ -43,6 +50,14 @@ async def handle_start(message: Message) -> None:
 
 
 @router.message(F.text)
-async def handle_text(message: Message) -> None:
-    # Временная заглушка: в подзадаче 3.2 заменится записью в inbox.md.
-    await message.answer(f"Принято: {message.text}")
+async def handle_text(message: Message, drive: DriveStorage) -> None:
+    text = message.text or ""
+    kind = classify(text)
+    line = format_line(datetime.now(_TZ), kind, text)
+    try:
+        await drive.append_inbox_line(line)
+    except Exception:
+        logger.exception("failed to append line to inbox.md")
+        await message.answer("⚠️ Ошибка записи. Попробуй ещё раз через минуту.")
+        return
+    await message.answer("📝 TASK" if kind == "TASK" else "✅ DONE")

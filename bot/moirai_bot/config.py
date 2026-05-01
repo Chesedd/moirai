@@ -22,8 +22,8 @@ class Settings(BaseSettings):
     # чтобы строку "123,456" обработал валидатор ниже.
     telegram_allowed_user_ids: Annotated[list[int], NoDecode]
     telegram_proxy_url: str | None = None
-    gdrive_folder_id: str | None = None
-    gdrive_service_account_file: str = "/secrets/gdrive.json"
+    gdrive_folder_id: str
+    gdrive_service_account_file: str
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod
@@ -47,6 +47,20 @@ class Settings(BaseSettings):
     def _require_non_empty_token(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("TELEGRAM_BOT_TOKEN must be set to a non-empty value")
+        return value
+
+    @field_validator("gdrive_folder_id", mode="after")
+    @classmethod
+    def _require_non_empty_folder_id(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("GDRIVE_FOLDER_ID must be set to a non-empty value")
+        return value
+
+    @field_validator("gdrive_service_account_file", mode="after")
+    @classmethod
+    def _require_non_empty_sa_file(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("GDRIVE_SERVICE_ACCOUNT_FILE must be set to a non-empty path")
         return value
 
     @field_validator("telegram_proxy_url", mode="before")

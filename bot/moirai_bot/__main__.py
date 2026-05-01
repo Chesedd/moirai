@@ -10,6 +10,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from .config import Settings
 from .handlers import WhitelistMiddleware, router
+from .storage.drive import DriveStorage
 
 logger = logging.getLogger("moirai_bot")
 
@@ -24,8 +25,15 @@ async def _run() -> None:
         session = AiohttpSession()
     logger.info("bot started, allowed users: %s", settings.telegram_allowed_user_ids)
 
+    drive_storage = DriveStorage(
+        service_account_file=settings.gdrive_service_account_file,
+        folder_id=settings.gdrive_folder_id,
+    )
+    logger.info("drive storage: folder=%s", settings.gdrive_folder_id)
+
     bot = Bot(token=settings.telegram_bot_token, session=session)
     dispatcher = Dispatcher()
+    dispatcher["drive"] = drive_storage
 
     middleware = WhitelistMiddleware(set(settings.telegram_allowed_user_ids))
     dispatcher.message.middleware(middleware)
