@@ -25,14 +25,17 @@
 
 ## Фаза 3 — MVP бота
 
-- [ ] Приём сообщений из Telegram (long polling, aiogram 3.x)
-- [ ] Whitelist по `user_id` из `.env`
-- [ ] Дозапись входящих в `inbox.md` на Drive с таймстампом и типом
-- [ ] Reply keyboard: план на день / все задачи / команды
-- [ ] Команды `/done N`, `/plan`, `/undo`, `/start`, `/help`
+- [x] Приём сообщений из Telegram (long polling, aiogram 3.x)
+- [x] Whitelist по `user_id` из `.env`
+- [x] Дозапись входящих в `inbox.md` на Drive с таймстампом и типом
+- [x] Команды `/start`, `/help`
+- [x] Команда `/undo` (откат последней записи в `inbox.md`)
+- [x] State-файл `state/undo_log.json`
 - [ ] Поллинг `outputs/` раз в `OUTPUTS_POLL_INTERVAL_SEC`
-- [ ] Отправка новых артефактов в чат (компактный Telegram-вид)
-- [ ] State-файлы `state/last_sent.json` и `state/undo_log.json`
+- [ ] Отправка новых артефактов в чат (пересылка `*_short.md`)
+- [ ] State-файл `state/last_sent.json`
+- [ ] Reply keyboard: план на день / все задачи / команды
+- [ ] Команды `/done N`, `/plan` (реальная нумерация по `daily_plan.md`)
 
 ## Фаза 4 — Routines
 
