@@ -6,6 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --uid 1000 --create-home --shell /bin/bash app
 
 # Слой зависимостей: ставим пакет с пустым stub-пакетом moirai_bot,
