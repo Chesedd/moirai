@@ -1,4 +1,4 @@
-"""Юнит-тесты для UndoLog."""
+"""Юнит-тесты для UndoLog и LastSent."""
 
 from __future__ import annotations
 
@@ -6,11 +6,15 @@ from pathlib import Path
 
 import pytest
 
-from moirai_bot.state import UndoLog
+from moirai_bot.state import LastSent, UndoLog
 
 
 def _path(tmp_path: Path) -> str:
     return str(tmp_path / "undo_log.json")
+
+
+def _last_sent_path(tmp_path: Path) -> str:
+    return str(tmp_path / "last_sent.json")
 
 
 async def test_remember_then_pop_returns_line(tmp_path: Path) -> None:
@@ -58,3 +62,36 @@ async def test_remember_pop_roundtrip_unicode(tmp_path: Path, payload: str) -> N
     log = UndoLog(_path(tmp_path))
     await log.remember(payload)
     assert await log.pop() == payload
+
+
+async def test_get_on_missing_file_returns_none(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    assert await last_sent.get("daily_plan_short.md") is None
+
+
+async def test_set_then_get(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    await last_sent.set("daily_plan_short.md", "2026-05-02T08:00:00.000Z")
+    assert await last_sent.get("daily_plan_short.md") == "2026-05-02T08:00:00.000Z"
+
+
+async def test_set_overwrites_same_key(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    await last_sent.set("daily_plan_short.md", "2026-05-02T08:00:00.000Z")
+    await last_sent.set("daily_plan_short.md", "2026-05-03T08:00:00.000Z")
+    assert await last_sent.get("daily_plan_short.md") == "2026-05-03T08:00:00.000Z"
+
+
+async def test_set_keeps_other_keys(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    await last_sent.set("daily_plan_short.md", "2026-05-02T08:00:00.000Z")
+    await last_sent.set("weekly_review_short.md", "2026-05-04T20:00:00.000Z")
+    await last_sent.set("daily_plan_short.md", "2026-05-03T08:00:00.000Z")
+    assert await last_sent.get("daily_plan_short.md") == "2026-05-03T08:00:00.000Z"
+    assert await last_sent.get("weekly_review_short.md") == "2026-05-04T20:00:00.000Z"
+
+
+async def test_get_unknown_key_returns_none(tmp_path: Path) -> None:
+    last_sent = LastSent(_last_sent_path(tmp_path))
+    await last_sent.set("daily_plan_short.md", "2026-05-02T08:00:00.000Z")
+    assert await last_sent.get("priorities_short.md") is None

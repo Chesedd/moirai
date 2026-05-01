@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     gdrive_folder_id: str
     gdrive_service_account_file: str
     state_dir: str = "/state"
+    outputs_poll_interval_sec: int = 60
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def chat_id(self) -> int:
+        """Telegram chat для пересылки артефактов: первый из whitelist'а."""
+        return self.telegram_allowed_user_ids[0]
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod
