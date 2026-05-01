@@ -1,0 +1,49 @@
+"""Конфигурация бота: загружается из переменных окружения."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Настройки рантайма.
+
+    Переменные окружения подаются через `docker compose env_file`,
+    поэтому собственный `env_file` здесь не указываем.
+    """
+
+    model_config = SettingsConfigDict(case_sensitive=False, extra="ignore")
+
+    telegram_bot_token: str
+    # NoDecode отключает JSON-парсинг complex-типа на уровне источника env,
+    # чтобы строку "123,456" обработал валидатор ниже.
+    telegram_allowed_user_ids: Annotated[list[int], NoDecode]
+    gdrive_folder_id: str | None = None
+    gdrive_service_account_file: str = "/secrets/gdrive.json"
+
+    @field_validator("telegram_allowed_user_ids", mode="before")
+    @classmethod
+    def _split_user_ids(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [int(item.strip()) for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("telegram_allowed_user_ids", mode="after")
+    @classmethod
+    def _require_non_empty_user_ids(cls, value: list[int]) -> list[int]:
+        if not value:
+            raise ValueError(
+                "TELEGRAM_ALLOWED_USER_IDS must contain at least one numeric user id, "
+                "e.g. TELEGRAM_ALLOWED_USER_IDS=123456789"
+            )
+        return value
+
+    @field_validator("telegram_bot_token", mode="after")
+    @classmethod
+    def _require_non_empty_token(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("TELEGRAM_BOT_TOKEN must be set to a non-empty value")
+        return value

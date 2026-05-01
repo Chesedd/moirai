@@ -6,17 +6,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Системные зависимости по минимуму
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN useradd --uid 1000 --create-home --shell /bin/bash app
 
-# Зависимости устанавливаем отдельным слоем для кешируемости
+# Слой зависимостей: ставим пакет с пустым stub-пакетом moirai_bot,
+# чтобы хешлинг-бэкенд смог собрать колесо. Реальный код приходит ниже,
+# и кеш этого слоя не инвалидируется при правке исходников.
 COPY pyproject.toml ./
-COPY src/ ./src/
-RUN pip install .
+RUN mkdir -p moirai_bot \
+    && : > moirai_bot/__init__.py \
+    && pip install --no-cache-dir . \
+    && rm -rf moirai_bot
 
-# State-каталог маунтим снаружи (docker-compose volume)
-RUN mkdir -p /app/state
+COPY moirai_bot/ ./moirai_bot/
 
-CMD ["python", "-m", "src.main"]
+USER app
+
+CMD ["python", "-m", "moirai_bot"]

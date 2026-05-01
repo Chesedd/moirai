@@ -10,6 +10,22 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  bot:
+    build: ../bot
+    container_name: moirai-bot
+    env_file: ../.env
+    volumes:
+      - /opt/moirai/secrets:/secrets:ro
+    restart: unless-stopped
+    depends_on:
+      caddy:
+        condition: service_started
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   caddy_data:
   caddy_config:
