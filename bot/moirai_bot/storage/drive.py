@@ -1,10 +1,11 @@
-"""Google Drive: дозапись строк в inbox.md."""
+"""Google Drive: дозапись строк в inbox.md и чтение outputs/."""
 
 from __future__ import annotations
 
 import asyncio
 import io
 import logging
+from dataclasses import dataclass
 
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
@@ -15,6 +16,17 @@ logger = logging.getLogger(__name__)
 _SCOPES: tuple[str, ...] = ("https://www.googleapis.com/auth/drive",)
 _INBOX_NAME: str = "inbox.md"
 _INBOX_MIME: str = "text/markdown"
+_OUTPUTS_NAME: str = "outputs"
+_FOLDER_MIME: str = "application/vnd.google-apps.folder"
+
+
+@dataclass(frozen=True)
+class OutputFileInfo:
+    """Метаданные одного файла из подпапки outputs/."""
+
+    id: str
+    name: str
+    modified_time: str
 
 
 class DriveStorage:
@@ -115,3 +127,70 @@ class DriveStorage:
             media_body=media,
             supportsAllDrives=True,
         ).execute()
+
+    async def list_outputs(self) -> list[OutputFileInfo]:
+        """Возвращает список файлов из подпапки outputs/.
+
+        Поднимает RuntimeError, если outputs/ не найдена.
+        """
+        return await asyncio.to_thread(self._list_outputs_sync)
+
+    def _list_outputs_sync(self) -> list[OutputFileInfo]:
+        outputs_id = self._find_outputs_folder_id()
+        query = f"'{outputs_id}' in parents and mimeType != '{_FOLDER_MIME}' and trashed = false"
+        files: list[OutputFileInfo] = []
+        page_token: str | None = None
+        while True:
+            response = (
+                self._service.files()
+                .list(
+                    q=query,
+                    spaces="drive",
+                    fields="nextPageToken, files(id, name, modifiedTime)",
+                    pageSize=100,
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
+            )
+            for item in response.get("files", []):
+                files.append(
+                    OutputFileInfo(
+                        id=item["id"],
+                        name=item["name"],
+                        modified_time=item["modifiedTime"],
+                    )
+                )
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        return files
+
+    def _find_outputs_folder_id(self) -> str:
+        query = (
+            f"name = '{_OUTPUTS_NAME}' "
+            f"and '{self._folder_id}' in parents "
+            f"and mimeType = '{_FOLDER_MIME}' "
+            "and trashed = false"
+        )
+        response = (
+            self._service.files()
+            .list(
+                q=query,
+                spaces="drive",
+                fields="files(id, name)",
+                pageSize=2,
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True,
+            )
+            .execute()
+        )
+        files = response.get("files", [])
+        if not files:
+            raise RuntimeError(f"outputs/ folder not found in Drive folder {self._folder_id}")
+        return files[0]["id"]
+
+    async def read_file(self, file_id: str) -> str:
+        """Скачивает содержимое файла как UTF-8 строку."""
+        return await asyncio.to_thread(self._download, file_id)

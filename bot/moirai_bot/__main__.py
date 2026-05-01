@@ -10,7 +10,8 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from .config import Settings
 from .handlers import WhitelistMiddleware, router
-from .state import UndoLog
+from .poller import OutputsPoller
+from .state import LastSent, UndoLog
 from .storage.drive import DriveStorage
 
 logger = logging.getLogger("moirai_bot")
@@ -36,6 +37,10 @@ async def _run() -> None:
     undo_log = UndoLog(undo_log_path)
     logger.info("undo log: %s", undo_log_path)
 
+    last_sent_path = f"{settings.state_dir}/last_sent.json"
+    last_sent = LastSent(last_sent_path)
+    logger.info("last sent: %s", last_sent_path)
+
     bot = Bot(token=settings.telegram_bot_token, session=session)
     dispatcher = Dispatcher()
     dispatcher["drive"] = drive_storage
@@ -47,9 +52,28 @@ async def _run() -> None:
 
     dispatcher.include_router(router)
 
+    poller = OutputsPoller(
+        bot=bot,
+        drive=drive_storage,
+        last_sent=last_sent,
+        chat_id=settings.chat_id,
+        interval_sec=settings.outputs_poll_interval_sec,
+    )
+    logger.info(
+        "outputs poller: every %s sec, target chat %s",
+        settings.outputs_poll_interval_sec,
+        settings.chat_id,
+    )
+
+    poller_task = asyncio.create_task(poller.run(), name="outputs-poller")
     try:
         await dispatcher.start_polling(bot)
     finally:
+        poller_task.cancel()
+        try:
+            await poller_task
+        except asyncio.CancelledError:
+            pass
         await bot.session.close()
 
 
