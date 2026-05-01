@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     telegram_proxy_url: str | None = None
     gdrive_folder_id: str
     gdrive_service_account_file: str
+    state_dir: str = "/state"
 
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod
