@@ -194,3 +194,46 @@ class DriveStorage:
     async def read_file(self, file_id: str) -> str:
         """Скачивает содержимое файла как UTF-8 строку."""
         return await asyncio.to_thread(self._download, file_id)
+
+    async def read_file_by_name(self, name: str) -> str | None:
+        """Читает файл по имени из outputs/.
+
+        Возвращает строку (UTF-8) или None, если файла нет. Если найдено
+        больше одного файла с таким именем — берёт самый свежий по
+        modifiedTime, остальные игнорирует (не удаляет, дедуп — забота
+        routines).
+        """
+        return await asyncio.to_thread(self._read_file_by_name_sync, name)
+
+    def _read_file_by_name_sync(self, name: str) -> str | None:
+        outputs_id = self._find_outputs_folder_id()
+        query = (
+            f"name = '{name}' "
+            f"and '{outputs_id}' in parents "
+            f"and mimeType != '{_FOLDER_MIME}' "
+            "and trashed = false"
+        )
+        files: list[dict] = []
+        page_token: str | None = None
+        while True:
+            response = (
+                self._service.files()
+                .list(
+                    q=query,
+                    spaces="drive",
+                    fields="nextPageToken, files(id, name, modifiedTime)",
+                    pageSize=100,
+                    pageToken=page_token,
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True,
+                )
+                .execute()
+            )
+            files.extend(response.get("files", []))
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        if not files:
+            return None
+        latest = max(files, key=lambda item: item["modifiedTime"])
+        return self._download(latest["id"])

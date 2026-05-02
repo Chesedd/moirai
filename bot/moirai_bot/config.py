@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     gdrive_service_account_file: str
     state_dir: str = "/state"
     outputs_poll_interval_sec: int = 60
+    reminder_check_interval_sec: int = 60
+    remind_lead_event_min: int = 15
+    remind_lead_slot_min: int = 5
 
     @computed_field  # type: ignore[prop-decorator]
     @property

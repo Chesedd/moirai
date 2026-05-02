@@ -11,7 +11,8 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from .config import Settings
 from .handlers import WhitelistMiddleware, router
 from .poller import OutputsPoller
-from .state import LastSent, UndoLog
+from .reminder import ReminderTimer
+from .state import LastSent, RemindersSent, UndoLog
 from .storage.drive import DriveStorage
 
 logger = logging.getLogger("moirai_bot")
@@ -41,6 +42,10 @@ async def _run() -> None:
     last_sent = LastSent(last_sent_path)
     logger.info("last sent: %s", last_sent_path)
 
+    reminders_sent_path = f"{settings.state_dir}/reminders_sent.json"
+    reminders_sent = RemindersSent(reminders_sent_path)
+    logger.info("reminders sent: %s", reminders_sent_path)
+
     bot = Bot(token=settings.telegram_bot_token, session=session)
     dispatcher = Dispatcher()
     dispatcher["drive"] = drive_storage
@@ -65,15 +70,34 @@ async def _run() -> None:
         settings.chat_id,
     )
 
+    reminder = ReminderTimer(
+        bot=bot,
+        drive=drive_storage,
+        reminders_sent=reminders_sent,
+        chat_id=settings.chat_id,
+        interval_sec=settings.reminder_check_interval_sec,
+        lead_event_min=settings.remind_lead_event_min,
+        lead_slot_min=settings.remind_lead_slot_min,
+    )
+    logger.info(
+        "reminder timer: every %s sec, lead event=%sm slot=%sm",
+        settings.reminder_check_interval_sec,
+        settings.remind_lead_event_min,
+        settings.remind_lead_slot_min,
+    )
+
     poller_task = asyncio.create_task(poller.run(), name="outputs-poller")
+    reminder_task = asyncio.create_task(reminder.run(), name="reminder-timer")
     try:
         await dispatcher.start_polling(bot)
     finally:
         poller_task.cancel()
-        try:
-            await poller_task
-        except asyncio.CancelledError:
-            pass
+        reminder_task.cancel()
+        for task in (poller_task, reminder_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await bot.session.close()
 
 

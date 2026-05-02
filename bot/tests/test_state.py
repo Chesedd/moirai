@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from moirai_bot.state import LastSent, UndoLog
+from moirai_bot.state import LastSent, RemindersSent, UndoLog
 
 
 def _path(tmp_path: Path) -> str:
@@ -15,6 +15,10 @@ def _path(tmp_path: Path) -> str:
 
 def _last_sent_path(tmp_path: Path) -> str:
     return str(tmp_path / "last_sent.json")
+
+
+def _reminders_sent_path(tmp_path: Path) -> str:
+    return str(tmp_path / "reminders_sent.json")
 
 
 async def test_remember_then_pop_returns_line(tmp_path: Path) -> None:
@@ -127,3 +131,26 @@ async def test_prune_on_missing_file_does_nothing(tmp_path: Path) -> None:
     last_sent = LastSent(_last_sent_path(tmp_path))
     await last_sent.prune_unknown({"id-a"})
     assert await last_sent.get("id-a") is None
+
+
+async def test_reminders_is_sent_on_unknown_returns_false(tmp_path: Path) -> None:
+    reminders = RemindersSent(_reminders_sent_path(tmp_path))
+    assert await reminders.is_sent("2026-04-24 10:00|EVENT|стоматолог") is False
+
+
+async def test_reminders_mark_then_is_sent(tmp_path: Path) -> None:
+    reminders = RemindersSent(_reminders_sent_path(tmp_path))
+    key = "2026-04-24 10:00|EVENT|стоматолог"
+    await reminders.mark_sent(key)
+    assert await reminders.is_sent(key) is True
+
+
+async def test_reminders_prune_removes_unknown(tmp_path: Path) -> None:
+    reminders = RemindersSent(_reminders_sent_path(tmp_path))
+    keep = "2026-04-24 10:00|EVENT|стоматолог"
+    drop = "2026-04-23 09:00-10:00|SLOT|прошлое"
+    await reminders.mark_sent(keep)
+    await reminders.mark_sent(drop)
+    await reminders.prune_unknown({keep})
+    assert await reminders.is_sent(keep) is True
+    assert await reminders.is_sent(drop) is False
