@@ -1,11 +1,11 @@
-"""State-файлы бота: undo log, last_sent и reminders_sent."""
+"""State-файлы бота: undo log, last_sent, reminders_sent и pending_reminders."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -92,6 +92,108 @@ class RemindersSent:
             if pruned == data:
                 return
             await asyncio.to_thread(self._write_sync, pruned)
+
+    def _read_sync(self) -> dict:
+        try:
+            with open(self._path, encoding="utf-8") as f:
+                content = f.read()
+        except FileNotFoundError:
+            return {}
+        if not content.strip():
+            return {}
+        try:
+            data = json.loads(content)
+        except json.JSONDecodeError:
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return data
+
+    def _write_sync(self, data: dict) -> None:
+        path = Path(self._path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=None)
+        os.replace(tmp_path, path)
+
+
+class PendingReminders:
+    """Хранит отложенные пользовательские напоминания
+    по команде /remind. В отличие от RemindersSent (который
+    помнит, что УЖЕ отправил), PendingReminders помнит, что
+    ЕЩЁ НЕ отправил.
+
+    Файл JSON формата:
+    {
+      "pending|<task_text>|<due_at_iso>": {
+        "due_at": "ISO-8601 with TZ",
+        "task_text": "задача",
+        "created_at": "ISO-8601 with TZ"
+      }
+    }
+    """
+
+    def __init__(self, path: str):
+        self._path = path
+        self._lock = asyncio.Lock()
+
+    async def add(self, task_text: str, due_at: datetime) -> str:
+        if due_at.tzinfo is None:
+            raise ValueError("due_at must be tz-aware")
+        key = f"pending|{task_text}|{due_at.isoformat()}"
+        async with self._lock:
+            data = await asyncio.to_thread(self._read_sync)
+            data[key] = {
+                "due_at": due_at.isoformat(),
+                "task_text": task_text,
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+            await asyncio.to_thread(self._write_sync, data)
+        return key
+
+    async def all_due(self, now: datetime) -> list[dict]:
+        if now.tzinfo is None:
+            raise ValueError("now must be tz-aware")
+        window_start = now - timedelta(minutes=1)
+        window_end = now + timedelta(minutes=15)
+        async with self._lock:
+            data = await asyncio.to_thread(self._read_sync)
+        result: list[dict] = []
+        for key, entry in data.items():
+            if not isinstance(entry, dict):
+                continue
+            due_raw = entry.get("due_at")
+            if not isinstance(due_raw, str):
+                continue
+            try:
+                due_at = datetime.fromisoformat(due_raw)
+            except ValueError:
+                continue
+            if due_at.tzinfo is None:
+                continue
+            if window_start <= due_at <= window_end:
+                result.append(
+                    {
+                        "key": key,
+                        "due_at": due_at,
+                        "task_text": entry.get("task_text", ""),
+                        "created_at": entry.get("created_at", ""),
+                    }
+                )
+        return result
+
+    async def remove(self, key: str) -> None:
+        async with self._lock:
+            data = await asyncio.to_thread(self._read_sync)
+            if key not in data:
+                return
+            del data[key]
+            await asyncio.to_thread(self._write_sync, data)
+
+    async def list_all(self) -> dict[str, dict]:
+        async with self._lock:
+            return await asyncio.to_thread(self._read_sync)
 
     def _read_sync(self) -> dict:
         try:

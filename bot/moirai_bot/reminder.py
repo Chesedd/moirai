@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 from aiogram import Bot
 
-from .state import RemindersSent
+from .state import PendingReminders, RemindersSent
 from .storage.drive import DriveStorage
 
 logger = logging.getLogger(__name__)
@@ -81,6 +81,7 @@ class ReminderTimer:
         bot: Bot,
         drive: DriveStorage,
         reminders_sent: RemindersSent,
+        pending_reminders: PendingReminders,
         chat_id: int,
         interval_sec: int,
         lead_event_min: int,
@@ -89,6 +90,7 @@ class ReminderTimer:
         self._bot = bot
         self._drive = drive
         self._reminders_sent = reminders_sent
+        self._pending = pending_reminders
         self._chat_id = chat_id
         self._interval_sec = interval_sec
         self._lead_event_min = lead_event_min
@@ -125,6 +127,28 @@ class ReminderTimer:
             await self._send(entry, now)
             await self._reminders_sent.mark_sent(entry.key)
         await self._reminders_sent.prune_unknown({e.key for e in entries})
+
+        now = datetime.now(MSK)
+        due = await self._pending.all_due(now)
+        for entry in due:
+            try:
+                await self._send_pending(entry, now)
+            except Exception:
+                logger.exception("failed to send pending reminder: %s", entry.get("task_text"))
+                continue
+            await self._pending.remove(entry["key"])
+
+    async def _send_pending(self, entry: dict, now: datetime) -> None:
+        task_text = entry["task_text"]
+        due_at: datetime = entry["due_at"]
+        delta_sec = (now - due_at).total_seconds()
+        if delta_sec > 5 * 60:
+            late_min = int(delta_sec // 60)
+            text = f"⏰ Напоминание (опоздало на {late_min} мин): {task_text}"
+        else:
+            text = f"⏰ Напоминание: {task_text}"
+        await self._bot.send_message(chat_id=self._chat_id, text=text)
+        logger.info("pending reminder sent: %s (due was %s)", task_text, due_at)
 
     async def _send(self, entry: ScheduleEntry, now: datetime) -> None:
         """Отправляет напоминание про entry в self._chat_id (plain text)."""

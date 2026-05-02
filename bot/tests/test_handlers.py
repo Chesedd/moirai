@@ -1,4 +1,4 @@
-"""Юнит-тесты команд /done, /skip, /now."""
+"""Юнит-тесты команд /done, /skip, /now, /remind."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from moirai_bot.clock import MSK
-from moirai_bot.handlers import handle_done, handle_now, handle_skip
+from moirai_bot.handlers import handle_done, handle_now, handle_remind, handle_skip
 from moirai_bot.storage.today_tasks import TodayTasks
 
 
@@ -36,6 +36,15 @@ class FakeUndoLog:
 
     async def remember(self, line: str) -> None:
         self.remembered.append(line)
+
+
+class FakePendingReminders:
+    def __init__(self) -> None:
+        self.added: list[tuple[str, datetime]] = []
+
+    async def add(self, task_text: str, due_at: datetime) -> str:
+        self.added.append((task_text, due_at))
+        return f"pending|{task_text}|{due_at.isoformat()}"
 
 
 class FakeTodayTasksReader:
@@ -237,3 +246,96 @@ async def test_now_slot_uses_lock_emoji() -> None:
         await handle_now(msg, drive)  # type: ignore[arg-type]
     text = msg.replies[0][0]
     assert "🔒 17:00 работа" in text
+
+
+# ---------- /remind ----------
+
+
+async def test_remind_no_args_shows_usage() -> None:
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    await handle_remind(msg, FakeCommand(None), reader, pending)  # type: ignore[arg-type]
+    assert pending.added == []
+    assert "/remind N HH:MM" in msg.replies[0][0]
+
+
+async def test_remind_only_n_shows_usage() -> None:
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    await handle_remind(msg, FakeCommand("3"), reader, pending)  # type: ignore[arg-type]
+    assert pending.added == []
+    assert "/remind N HH:MM" in msg.replies[0][0]
+
+
+async def test_remind_with_invalid_time_format() -> None:
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    await handle_remind(msg, FakeCommand("1 abc"), reader, pending)  # type: ignore[arg-type]
+    assert pending.added == []
+    assert "формат времени" in msg.replies[0][0]
+
+
+async def test_remind_with_non_int_n() -> None:
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    await handle_remind(msg, FakeCommand("abc 18:00"), reader, pending)  # type: ignore[arg-type]
+    assert pending.added == []
+    assert "числом" in msg.replies[0][0]
+
+
+async def test_remind_with_unknown_n() -> None:
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    with patch("moirai_bot.handlers.now_msk", _frozen_now):
+        await handle_remind(msg, FakeCommand("99 18:00"), reader, pending)  # type: ignore[arg-type]
+    assert pending.added == []
+    assert "Нет задачи" in msg.replies[0][0]
+
+
+async def test_remind_when_today_tasks_missing() -> None:
+    reader = FakeTodayTasksReader(None)
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    with patch("moirai_bot.handlers.now_msk", _frozen_now):
+        await handle_remind(msg, FakeCommand("1 18:00"), reader, pending)  # type: ignore[arg-type]
+    assert pending.added == []
+    assert "План на сегодня" in msg.replies[0][0]
+
+
+async def test_remind_with_past_time_rejected() -> None:
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    with patch("moirai_bot.handlers.now_msk", _frozen_now):
+        await handle_remind(msg, FakeCommand("1 10:00"), reader, pending)  # type: ignore[arg-type]
+    assert pending.added == []
+    assert "уже прошло" in msg.replies[0][0]
+
+
+async def test_remind_with_valid_args_adds_to_pending() -> None:
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб", 2: "Отчёт Q1"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    with patch("moirai_bot.handlers.now_msk", _frozen_now):
+        await handle_remind(msg, FakeCommand("2 18:00"), reader, pending)  # type: ignore[arg-type]
+    assert len(pending.added) == 1
+    task_text, due_at = pending.added[0]
+    assert task_text == "Отчёт Q1"
+    assert due_at == datetime(2026, 5, 2, 18, 0, tzinfo=MSK)
+    assert "⏰ Напомню в 18:00" in msg.replies[0][0]
+    assert "Отчёт Q1" in msg.replies[0][0]
+
+
+async def test_remind_does_not_write_to_inbox() -> None:
+    drive = FakeDrive()
+    reader = FakeTodayTasksReader(_tasks({1: "Купить хлеб"}))
+    pending = FakePendingReminders()
+    msg = FakeMessage()
+    with patch("moirai_bot.handlers.now_msk", _frozen_now):
+        await handle_remind(msg, FakeCommand("1 18:00"), reader, pending)  # type: ignore[arg-type]
+    assert drive.appended == []

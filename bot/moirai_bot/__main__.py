@@ -12,7 +12,7 @@ from .config import Settings
 from .handlers import WhitelistMiddleware, router
 from .poller import OutputsPoller
 from .reminder import ReminderTimer
-from .state import LastSent, RemindersSent, UndoLog
+from .state import LastSent, PendingReminders, RemindersSent, UndoLog
 from .storage.drive import DriveStorage
 from .storage.today_tasks import TodayTasksReader
 
@@ -47,6 +47,10 @@ async def _run() -> None:
     reminders_sent = RemindersSent(reminders_sent_path)
     logger.info("reminders sent: %s", reminders_sent_path)
 
+    pending_reminders_path = f"{settings.state_dir}/pending_reminders.json"
+    pending_reminders = PendingReminders(pending_reminders_path)
+    logger.info("pending reminders: %s", pending_reminders_path)
+
     today_tasks_reader = TodayTasksReader(drive_storage)
 
     bot = Bot(token=settings.telegram_bot_token, session=session)
@@ -54,6 +58,7 @@ async def _run() -> None:
     dispatcher["drive"] = drive_storage
     dispatcher["undo_log"] = undo_log
     dispatcher["today_tasks"] = today_tasks_reader
+    dispatcher["pending_reminders"] = pending_reminders
 
     middleware = WhitelistMiddleware(set(settings.telegram_allowed_user_ids))
     dispatcher.message.middleware(middleware)
@@ -78,6 +83,7 @@ async def _run() -> None:
         bot=bot,
         drive=drive_storage,
         reminders_sent=reminders_sent,
+        pending_reminders=pending_reminders,
         chat_id=settings.chat_id,
         interval_sec=settings.reminder_check_interval_sec,
         lead_event_min=settings.remind_lead_event_min,
