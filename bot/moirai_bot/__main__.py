@@ -14,6 +14,7 @@ from .poller import OutputsPoller
 from .reminder import ReminderTimer
 from .state import LastSent, RemindersSent, UndoLog
 from .storage.drive import DriveStorage
+from .storage.today_tasks import TodayTasksReader
 
 logger = logging.getLogger("moirai_bot")
 
@@ -46,10 +47,13 @@ async def _run() -> None:
     reminders_sent = RemindersSent(reminders_sent_path)
     logger.info("reminders sent: %s", reminders_sent_path)
 
+    today_tasks_reader = TodayTasksReader(drive_storage)
+
     bot = Bot(token=settings.telegram_bot_token, session=session)
     dispatcher = Dispatcher()
     dispatcher["drive"] = drive_storage
     dispatcher["undo_log"] = undo_log
+    dispatcher["today_tasks"] = today_tasks_reader
 
     middleware = WhitelistMiddleware(set(settings.telegram_allowed_user_ids))
     dispatcher.message.middleware(middleware)
