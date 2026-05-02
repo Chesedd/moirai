@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from html import escape
 from typing import Any
 
@@ -11,10 +12,10 @@ from aiogram import BaseMiddleware, F, Router
 from aiogram.filters import Command, CommandObject, CommandStart
 from aiogram.types import Message, TelegramObject, User
 
-from .clock import now_msk
+from .clock import MSK, now_msk
 from .inbox import classify, format_line
 from .reminder import parse_schedule
-from .state import UndoLog
+from .state import PendingReminders, UndoLog
 from .storage.drive import DriveStorage
 from .storage.today_tasks import TodayTasksReader
 
@@ -29,6 +30,7 @@ _HELP_TEXT = (
     "/undo — отменить последнюю запись в inbox\n"
     "/done N — отметить задачу N как выполненную\n"
     "/skip N — пропустить задачу N (не закрывать, перенести)\n"
+    "/remind N HH:MM — напомнить о задаче N сегодня в HH:MM\n"
     "/now — текущее время и ближайшее событие\n"
     "/plan — показать план на сегодня (после первого daily_plan)\n\n"
     "Любое текстовое сообщение — задача или выполнение.\n"
@@ -42,6 +44,11 @@ _PLAN_STUB_TEXT = (
 
 _DONE_USAGE = "Использование: /done N — где N это номер задачи из /plan."
 _SKIP_USAGE = "Использование: /skip N — где N это номер задачи из /plan."
+_REMIND_USAGE = (
+    "Использование: /remind N HH:MM — напомнить о задаче N сегодня в HH:MM. Пример: /remind 3 18:00"
+)
+_REMIND_BAD_TIME = "Неправильный формат времени. Используй HH:MM, например 18:00."
+_REMIND_BAD_N = "N должно быть числом."
 
 _NO_TODAY_TASKS = (
     "📅 План на сегодня ещё не сгенерирован. Попробуй после 08:00 МСК или напиши /plan."
@@ -173,6 +180,49 @@ async def handle_skip(
     await message.answer(
         f"⏭ SKIP: {text}\n(задача останется открытой, но сегодня её делать не будешь)"
     )
+
+
+@router.message(Command("remind"))
+async def handle_remind(
+    message: Message,
+    command: CommandObject,
+    today_tasks: TodayTasksReader,
+    pending_reminders: PendingReminders,
+) -> None:
+    raw = (command.args or "").strip()
+    parts = raw.split()
+    if len(parts) < 2:
+        await message.answer(_REMIND_USAGE)
+        return
+    n_raw, time_raw = parts[0], parts[1]
+    try:
+        n = int(n_raw)
+    except ValueError:
+        await message.answer(_REMIND_BAD_N)
+        return
+    try:
+        parsed_time = datetime.strptime(time_raw, "%H:%M").time()
+    except ValueError:
+        await message.answer(_REMIND_BAD_TIME)
+        return
+
+    snapshot = await today_tasks.read()
+    if snapshot is None:
+        await message.answer(_NO_TODAY_TASKS)
+        return
+    text = snapshot.tasks.get(n)
+    if text is None:
+        await message.answer(_unknown_n_text(snapshot.tasks))
+        return
+
+    now = now_msk()
+    due_at = datetime.combine(now.date(), parsed_time, tzinfo=MSK)
+    if due_at <= now:
+        await message.answer(f"⏱ Время {time_raw} уже прошло. Используй будущее время.")
+        return
+
+    await pending_reminders.add(text, due_at)
+    await message.answer(f"⏰ Напомню в {time_raw} о задаче:\n{text}")
 
 
 @router.message(Command("now"))

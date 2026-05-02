@@ -1,12 +1,14 @@
-"""Юнит-тесты для UndoLog и LastSent."""
+"""Юнит-тесты для UndoLog, LastSent, RemindersSent и PendingReminders."""
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from moirai_bot.state import LastSent, RemindersSent, UndoLog
+from moirai_bot.clock import MSK
+from moirai_bot.state import LastSent, PendingReminders, RemindersSent, UndoLog
 
 
 def _path(tmp_path: Path) -> str:
@@ -19,6 +21,10 @@ def _last_sent_path(tmp_path: Path) -> str:
 
 def _reminders_sent_path(tmp_path: Path) -> str:
     return str(tmp_path / "reminders_sent.json")
+
+
+def _pending_path(tmp_path: Path) -> str:
+    return str(tmp_path / "pending_reminders.json")
 
 
 async def test_remember_then_pop_returns_line(tmp_path: Path) -> None:
@@ -154,3 +160,84 @@ async def test_reminders_prune_removes_unknown(tmp_path: Path) -> None:
     await reminders.prune_unknown({keep})
     assert await reminders.is_sent(keep) is True
     assert await reminders.is_sent(drop) is False
+
+
+# ---------- PendingReminders ----------
+
+
+async def test_pending_add_and_list(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    due = datetime(2026, 5, 2, 18, 0, tzinfo=MSK)
+    key = await pending.add("Купить хлеб", due)
+    contents = await pending.list_all()
+    assert key in contents
+    assert contents[key]["task_text"] == "Купить хлеб"
+    assert contents[key]["due_at"] == due.isoformat()
+    assert "created_at" in contents[key]
+
+
+async def test_pending_all_due_returns_due_entries(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    now = datetime(2026, 5, 2, 18, 0, tzinfo=MSK)
+    await pending.add("Сейчас", now)
+    due = await pending.all_due(now)
+    assert len(due) == 1
+    assert due[0]["task_text"] == "Сейчас"
+    assert due[0]["due_at"] == now
+
+
+async def test_pending_all_due_excludes_future(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    now = datetime(2026, 5, 2, 18, 0, tzinfo=MSK)
+    far_future = now + timedelta(minutes=30)
+    await pending.add("Позже", far_future)
+    due = await pending.all_due(now)
+    assert due == []
+
+
+async def test_pending_all_due_includes_recent_past(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    now = datetime(2026, 5, 2, 18, 0, tzinfo=MSK)
+    one_minute_ago = now - timedelta(minutes=1)
+    await pending.add("Минуту назад", one_minute_ago)
+    due = await pending.all_due(now)
+    assert len(due) == 1
+    assert due[0]["task_text"] == "Минуту назад"
+
+
+async def test_pending_all_due_excludes_far_past(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    now = datetime(2026, 5, 2, 18, 0, tzinfo=MSK)
+    far_past = now - timedelta(minutes=10)
+    await pending.add("Давно", far_past)
+    due = await pending.all_due(now)
+    assert due == []
+
+
+async def test_pending_remove_deletes_entry(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    due = datetime(2026, 5, 2, 18, 0, tzinfo=MSK)
+    key = await pending.add("Купить хлеб", due)
+    await pending.remove(key)
+    contents = await pending.list_all()
+    assert key not in contents
+
+
+async def test_pending_remove_idempotent(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    await pending.remove("nonexistent-key")
+    contents = await pending.list_all()
+    assert contents == {}
+
+
+async def test_pending_list_all_on_missing_file_returns_empty(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    contents = await pending.list_all()
+    assert contents == {}
+
+
+async def test_pending_add_requires_aware_datetime(tmp_path: Path) -> None:
+    pending = PendingReminders(_pending_path(tmp_path))
+    naive = datetime(2026, 5, 2, 18, 0)
+    with pytest.raises(ValueError):
+        await pending.add("Без TZ", naive)
